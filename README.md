@@ -1,6 +1,6 @@
 # AssemblyAI Real-Time C# Demo
 
-# Setting up the Project
+## Setting up the Project
 
 This project is designed to be cross-platform, but does have a few dependencies regardless of which OS you're using. For starters, you'll need to install [SoX](https://sourceforge.net/projects/sox/), the audio processing program we'll use for recording our microphone. 
 
@@ -17,7 +17,7 @@ Now you'll need to set up your .NET environment to make sure you can configure a
 
 Once it's successfully installed, you'll now have access to the .NET Command Line Interface (CLI) which will allow you to build and run this project.
 
-# Running the Project
+## Running the Project
 
 With the .NET CLI, navigate to the root folder of this project. Then run `dotnet build` to verify that the build completes successfully and that you've got all necessasry dependencies on your system. No third-party libraries besides SoX are needed for this project, so if your .NET installation went smoothly, you should have all of the .dll files you'll need to use built-in .NET packages.
 
