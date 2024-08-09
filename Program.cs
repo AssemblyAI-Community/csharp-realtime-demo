@@ -52,11 +52,11 @@ using var soxProcess = new Process
 soxProcess.Start();
 soxProcess.BeginErrorReadLine();
 var soxOutputStream = soxProcess.StandardOutput.BaseStream;
-var buffer = new byte[4096];
-while (await soxOutputStream.ReadAsync(buffer, 0, buffer.Length, ct) > 0)
+var buffer = new Memory<byte>(new byte[4096]);
+while (await soxOutputStream.ReadAsync(buffer, ct) > 0)
 {
     if (ct.IsCancellationRequested) break;
-    transcriber.SendAudio(buffer);
+    await transcriber.SendAudioAsync(buffer);
 }
 
 soxProcess.Kill();
