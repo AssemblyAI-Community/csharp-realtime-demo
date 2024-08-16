@@ -1,83 +1,63 @@
-﻿using System.Net.WebSockets;
-using System.Text;
-using System.Diagnostics;
+﻿using System.Diagnostics;
+using AssemblyAI.Realtime;
 
-namespace AssemblyAIRealtime
+// Set up the cancellation token, so we can stop the program with Ctrl+C
+var cts = new CancellationTokenSource();
+var ct = cts.Token;
+Console.CancelKeyPress += (sender, e) => cts.Cancel();
+
+// Set up the realtime transcriber
+await using var transcriber = new RealtimeTranscriber(new RealtimeTranscriberOptions
 {
-    class Program
+    ApiKey = Environment.GetEnvironmentVariable("ASSEMBLYAI_API_KEY"),
+    SampleRate = 16_000
+});
+
+transcriber.PartialTranscriptReceived.Subscribe(transcript =>
+{
+    if (transcript.Text == "") return;
+    Console.WriteLine($"Partial transcript: {transcript.Text}");
+});
+transcriber.FinalTranscriptReceived.Subscribe(transcript =>
+{
+    Console.WriteLine($"Final transcript: {transcript.Text}");
+});
+
+await transcriber.ConnectAsync();
+
+var soxArguments = string.Join(' ', [
+    "--default-device",
+    "--no-show-progress",
+    "--rate 16000",
+    "--channels 1",
+    "--encoding signed-integer",
+    "--bits 16",
+    "--type wav",
+    "-" // pipe
+]);
+Console.WriteLine($"sox {soxArguments}");
+using var soxProcess = new Process
+{
+    StartInfo = new ProcessStartInfo
     {
-        static async Task Main()
-        {
-            using var client = new AssemblyAIRealtimeClient();
-            await client.StartTranscriptionAsync();
-        }
+        FileName = "sox",
+        Arguments = soxArguments,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+        CreateNoWindow = true
     }
+};
 
-    class AssemblyAIRealtimeClient : IDisposable
-    {
-        private readonly ClientWebSocket _webSocket;
-        private Process _soxProcess;
-        private const string SoxCommand = "sox -d -t wav -r 16000 -b 16 -c 1 -e signed-integer -";
-
-        public AssemblyAIRealtimeClient()
-        {
-            _webSocket = new ClientWebSocket();
-        }
-
-        public async Task StartTranscriptionAsync()
-        {
-            var apiKey = "API_KEY_HERE";
-
-            _webSocket.Options.SetRequestHeader("Authorization", apiKey);
-            await _webSocket.ConnectAsync(new Uri("wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000"), CancellationToken.None);
-            _soxProcess = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "/bin/bash",
-                    Arguments = $"-c \"{SoxCommand}\"",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-
-            _soxProcess.Start();
-
-            _soxProcess.BeginErrorReadLine();
-
-            var soxOuputStream = _soxProcess.StandardOutput.BaseStream;
-            await Task.WhenAll(SendAudioDataAsync(soxOuputStream), ReceiveMessagesAsync());
-        }
-
-        private async Task SendAudioDataAsync(Stream audioStream)
-        {
-            byte[] buffer = new byte[4096];
-            int bytesRead;
-            while ((bytesRead = await audioStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-            {
-                await _webSocket.SendAsync(new ArraySegment<byte>(buffer, 0, bytesRead), WebSocketMessageType.Binary, true, CancellationToken.None);
-            }
-        }
-
-        private async Task ReceiveMessagesAsync()
-        {
-            var buffer = new byte[4096];
-            WebSocketReceiveResult result;
-            do
-            {
-                result = await _webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                Console.WriteLine("Received message: " + message);
-            } while (!result.CloseStatus.HasValue);
-        }
-
-        public void Dispose()
-        {
-            _webSocket.Dispose();
-            _soxProcess?.Kill();
-            _soxProcess?.Dispose();
-        }
-    }
+soxProcess.Start();
+soxProcess.BeginErrorReadLine();
+var soxOutputStream = soxProcess.StandardOutput.BaseStream;
+var buffer = new Memory<byte>(new byte[4096]);
+while (await soxOutputStream.ReadAsync(buffer, ct) > 0)
+{
+    if (ct.IsCancellationRequested) break;
+    await transcriber.SendAudioAsync(buffer);
 }
+
+soxProcess.Kill();
+await transcriber.CloseAsync();
