@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using AssemblyAI.Realtime;
 
 // Set up the cancellation token, so we can stop the program with Ctrl+C
@@ -26,7 +27,8 @@ transcriber.FinalTranscriptReceived.Subscribe(transcript =>
 await transcriber.ConnectAsync();
 
 var soxArguments = string.Join(' ', [
-    "--default-device",
+    // --default-device doesn't work on Windows
+    RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "-t waveaudio default" : "--default-device",
     "--no-show-progress",
     "--rate 16000",
     "--channels 1",
